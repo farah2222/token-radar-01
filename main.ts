@@ -7,7 +7,7 @@
 //
 // The dashboard is a static page, no framework and no network: dashboard/index.html, dashboard/app.css
 // and dashboard/app.js read /output/data.js, which this program writes from the same board. The model
-// is radar-2: each category's multiple is the median FDV/TVL of the live-token protocols in that
+// is radar-3: each category's multiple is the median market-cap/TVL of the live-token protocols in that
 // category in this snapshot, so a lending protocol is never priced like a perp exchange, and the board
 // never ranks a wrapped, staked or bridged product of a token that already trades.
 //

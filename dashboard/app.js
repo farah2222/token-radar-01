@@ -28,7 +28,7 @@
   }
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same arithmetic.
-  // multiple = the category's median FDV/TVL from the snapshot's live tokens (or the global median).
+  // multiple = the category's median market-cap/TVL from the snapshot's live tokens (or the global median).
   function impliedOf(row, model) {
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * model.growth_weight;
@@ -285,7 +285,7 @@
             sortHeader('tvl', 'TVL'),
             sortHeader('growth', '7d'),
             sortHeader('age', 'Age'),
-            sortHeader('multiple', 'FDV/TVL'),
+            sortHeader('multiple', 'Mcap/TVL'),
             sortHeader('implied', 'Implied value'),
             el('th', { scope: 'col', text: 'Token' })
           )),
@@ -311,8 +311,8 @@
     return el('div', { class: 'panel' },
       el('div', { class: 'table-wrap' },
         el('table', null,
-          el('caption', { class: 'sub', text: 'Token live: these protocols already trade, so their market cap is a fact, not a model. Their FDV/TVL ratios are the comparables the pre-token board is priced from. They are set aside from the pre-token ranking.' }),
-          el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Status' }), el('th', { scope: 'col', text: 'Protocol' }), el('th', { scope: 'col', text: 'TVL' }), el('th', { scope: 'col', text: '7d' }), el('th', { scope: 'col', text: 'Market cap' }), el('th', { scope: 'col', text: 'FDV/TVL' }), el('th', { scope: 'col', text: 'Token' }))),
+          el('caption', { class: 'sub', text: 'Token live: these protocols already trade, so their market cap is a fact, not a model. Their market-cap/TVL ratios are the comparables the pre-token board is priced from. They are set aside from the pre-token ranking.' }),
+          el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Status' }), el('th', { scope: 'col', text: 'Protocol' }), el('th', { scope: 'col', text: 'TVL' }), el('th', { scope: 'col', text: '7d' }), el('th', { scope: 'col', text: 'Market cap' }), el('th', { scope: 'col', text: 'Mcap/TVL' }), el('th', { scope: 'col', text: 'Token' }))),
           tbody
         )
       )
@@ -330,7 +330,7 @@
     });
     return el('section', { class: 'panel model' },
       el('h2', { text: 'How implied value is computed' }),
-      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The category multiple is the median FDV/TVL of the live-token protocols in that category in this snapshot (at least 3 of them, else the global median ' + DATA.global_multiple.toFixed(2) + 'x).' }),
+      el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The category multiple is the median market-cap/TVL of the live-token protocols in that category in this snapshot (at least 3 of them, else the global median ' + DATA.global_multiple.toFixed(2) + 'x).' }),
       el('div', { class: 'formula' },
         'implied = round( tvl_usd x category_multiple x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') x (1 + ' + m.breadth_per_chain + ' x min(chains - 1, ' + m.breadth_max_chains + ')) )'
       ),
@@ -346,23 +346,37 @@
   var dialog = el('dialog', { class: 'detail', id: 'detail', 'aria-labelledby': 'detail-title' });
   dialog.addEventListener('close', function () { state.selected = null; writeHash(); });
 
+  // The live-token comparables behind a row's multiple: the same set the model priced the
+  // category from (every live-token protocol in the snapshot), sorted by market-cap/TVL with
+  // the median row marked. When a category has fewer than 3 of them the row is priced from
+  // the global median instead, and the note says so — a single comparable never sets a price.
   function comparables(row) {
     var same = DATA.live.filter(function (l) { return l.category === row.category && l.mcap_usd && l.tvl_usd; })
-      .sort(function (a, b) { return (b.mcap_usd / b.tvl_usd) - (a.mcap_usd / a.tvl_usd); })
-      .slice(0, 5);
-    if (same.length === 0) return el('p', { class: 'sub', text: 'No live-token protocol in this category is in the snapshot, so this row uses the global median multiple.' });
+      .map(function (l) { return { name: l.name, tvl: l.tvl_usd, mcap: l.mcap_usd, ratio: l.mcap_usd / l.tvl_usd }; })
+      .sort(function (a, b) { return a.ratio - b.ratio; });
+    var n = same.length;
+    var mult = row.category_multiple.toFixed(2) + 'x';
+    if (n === 0) return el('p', { class: 'sub', text: 'No live-token protocol in this category is in the snapshot, so this row uses the global median multiple (' + mult + ').' });
+    var mid = Math.floor(n / 2);
+    var isMedian = function (i) { return n % 2 === 1 ? i === mid : (i === mid - 1 || i === mid); };
+    var note = n < 3
+      ? 'Only ' + n + ' live-token protocol' + (n === 1 ? '' : 's') + ' in this category ' + (n === 1 ? 'is' : 'are') + ' in the snapshot — fewer than the 3 needed for a category multiple — so this row uses the global median multiple (' + mult + '). Shown for reference:'
+      : 'The category multiple (' + mult + ') is the median market-cap/TVL ratio of these ' + n + ' live-token protocols in the snapshot. The median row is marked.';
     var tbody = el('tbody');
-    same.forEach(function (l) {
+    same.forEach(function (l, i) {
       tbody.appendChild(el('tr', null,
-        el('td', { text: l.name }),
-        el('td', { class: 'num', text: fmtUsd(l.tvl_usd) }),
-        el('td', { class: 'num', text: fmtUsd(l.mcap_usd) }),
-        el('td', { class: 'num', text: (l.mcap_usd / l.tvl_usd).toFixed(2) + 'x' })
+        el('td', { text: l.name + (isMedian(i) && n >= 3 ? ' · median' : '') }),
+        el('td', { class: 'num', text: fmtUsd(l.tvl) }),
+        el('td', { class: 'num', text: fmtUsd(l.mcap) }),
+        el('td', { class: 'num', text: l.ratio.toFixed(2) + 'x' })
       ));
     });
-    return el('table', { class: 'comps' },
-      el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Live protocol' }), el('th', { scope: 'col', text: 'TVL' }), el('th', { scope: 'col', text: 'Market cap' }), el('th', { scope: 'col', text: 'FDV/TVL' }))),
-      tbody
+    return el('div', null,
+      el('p', { class: 'sub', text: note }),
+      el('table', { class: 'comps' },
+        el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Live protocol' }), el('th', { scope: 'col', text: 'TVL' }), el('th', { scope: 'col', text: 'Market cap' }), el('th', { scope: 'col', text: 'Mcap/TVL' }))),
+        tbody
+      )
     );
   }
 

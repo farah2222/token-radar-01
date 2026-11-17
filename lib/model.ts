@@ -1,4 +1,4 @@
-// Token Radar's model (radar-2): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's model (radar-3): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and adds the
 // pre-token protocols below the floor that the watchlist's own rule would keep: no wrapped, staked or
@@ -8,7 +8,7 @@
 //
 // Implied value is a comparables model, computed only from the snapshot's own figures:
 //
-//   multiple   = median FDV/TVL (mcap_usd / tvl_usd) of the live-token protocols in the same
+//   multiple   = median market-cap/TVL (mcap_usd / tvl_usd) of the live-token protocols in the same
 //                category in this snapshot (at least 3 of them, else the global median), clamped
 //                to [0.05, 1.5]. A category's multiple is what the market already pays for the
 //                same kind of protocol, so a lending protocol is not priced like a perp exchange.
@@ -79,10 +79,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-2';
-
-/** How many live-token protocols the Live token view carries, by market cap. */
-export const LIVE_ROWS = 40;
+export const MODEL_VERSION = 'radar-3';
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -512,12 +509,15 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   ];
 }
 
-/** The live-token protocols, by market cap, for the dashboard's Live token view. */
+/** The live-token protocols, by market cap, for the dashboard's Live token view — and the same set
+ * the detail view's comparables are drawn from, so the comparables a row shows are the protocols
+ * its multiple was priced from. Every live-token protocol in the snapshot with a positive market
+ * cap is carried (no top-N cut): the separation between protocols whose token already trades and
+ * those still to come is complete, not a sample. */
 export function liveRows(snapshot: Snapshot): LiveRow[] {
   return snapshot.protocols
     .filter((p) => !isPreToken(p) && p.mcap_usd !== null && p.mcap_usd > 0 && p.category !== 'CEX')
     .sort((a, b) => (b.mcap_usd ?? 0) - (a.mcap_usd ?? 0) || b.tvl_usd - a.tvl_usd)
-    .slice(0, LIVE_ROWS)
     .map((p) => ({
       slug: p.slug,
       name: p.name,
