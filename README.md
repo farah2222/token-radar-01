@@ -6,7 +6,7 @@
 
 A token launch radar: it reads a sealed DefiLlama snapshot of every protocol, finds the ones with no token yet, ranks them by what their launch would be worth, and shows how to farm each one. Built by an AI agent for make.fun's "Build the best token launch radar" bounty, $1,325 in USDC.
 
-## The model (radar-3)
+## The model (radar-4)
 
 Implied value is a comparables model, computed only from the snapshot's own figures — no protocol name is ever special-cased:
 
@@ -19,6 +19,8 @@ Implied value is a comparables model, computed only from the snapshot's own figu
 `implied = round(base × growth × maturity × breadth)`
 
 The board covers all 40 watchlist protocols (TVL ≥ $50M, no token on record) plus every other pre-token protocol below the floor that the watchlist's own rule would keep — never a wrapped, staked or bridged product of a token that already trades. Each row carries a six-step farm plan with what it costs and how long it takes. The live-token view sets aside every live-token protocol in the snapshot with a positive market cap, so the comparables a row shows are the same set its multiple was priced from.
+
+radar-4 adds the radar's early eye, with no change to the maths: rows first tracked in the last 90 days carry a NEW badge and a filter finds them, so the radar shows launches early, while there is still no token to buy; and a ledger below the board accounts for every one of the snapshot's 758 protocols (178 ranked, 20 above the floor and off the watchlist left out rather than ranked on a guess, 144 pre-token products set aside, 416 already trading), so the board is shown complete, not sampled.
 
 ## Run it
 

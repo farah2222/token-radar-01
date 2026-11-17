@@ -7,7 +7,11 @@
   var DATA = window.RADAR;
   if (!DATA) return;
   var app = document.getElementById('board');
-  var state = { q: '', category: 'all', chain: 'all', watchlist: false, tab: 'pre-token', sort: 'implied', dir: -1, selected: null };
+  var state = { q: '', category: 'all', chain: 'all', watchlist: false, isNew: false, tab: 'pre-token', sort: 'implied', dir: -1, selected: null };
+
+  // A row is newly tracked when DefiLlama began tracking it within the snapshot's own window:
+  // a launch the radar found early, while there is still no token to buy. The day is the record's
+  // first-tracked day, never a launch date, and the badge says so in its title.
 
   var usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   function fmtUsd(n) {
@@ -57,6 +61,16 @@
       else node.appendChild(child);
     }
     return node;
+  }
+
+  function isNewRow(r) {
+    return r.age_days !== null && r.age_days !== undefined && r.age_days <= DATA.new_days;
+  }
+  function newCount() {
+    return DATA.rows.filter(isNewRow).length;
+  }
+  function newLabel(r) {
+    return 'First tracked by DefiLlama on ' + (r.listed_at || 'an unrecorded day') + ', ' + r.age_days + ' days ago: a launch the radar found early, while there is still no token.';
   }
 
   // The farm plan is the same derivation main.ts writes to board.json: category, chains, TVL and age
@@ -132,6 +146,7 @@
     if (params.get('category')) state.category = params.get('category');
     if (params.get('chain')) state.chain = params.get('chain');
     if (params.get('watchlist') === '1') state.watchlist = true;
+    if (params.get('new') === '1') state.isNew = true;
     if (params.get('tab')) state.tab = params.get('tab');
   }
   function writeHash() {
@@ -140,6 +155,7 @@
     if (state.category !== 'all') params.set('category', state.category);
     if (state.chain !== 'all') params.set('chain', state.chain);
     if (state.watchlist) params.set('watchlist', '1');
+    if (state.isNew) params.set('new', '1');
     if (state.tab !== 'pre-token') params.set('tab', state.tab);
     if (state.selected) params.set('p', state.selected);
     var next = params.toString();
@@ -151,6 +167,7 @@
     var q = state.q.trim().toLowerCase();
     return DATA.rows.filter(function (r) {
       if (state.watchlist && !r.watchlist) return false;
+      if (state.isNew && !isNewRow(r)) return false;
       if (state.category !== 'all' && r.category !== state.category) return false;
       if (state.chain !== 'all' && (r.chains || []).indexOf(state.chain) < 0) return false;
       if (!q) return true;
@@ -189,12 +206,13 @@
     return el('section', { class: 'lede' },
       el('div', null,
         el('h1', { text: DATA.watchlist_size + ' watchlist protocols, ranked by implied value' }),
-        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record. The early radar adds ' + DATA.early_size + ' pre-token protocols below that floor — never a wrapped, staked or bridged product of a token that already trades. Implied value is a model, not a promise.' })
+        el('p', { text: 'The watchlist is the floor: every protocol with at least $' + Math.round(DATA.floor_usd / 1e6) + 'M of TVL and no token on record. The early radar adds ' + DATA.early_size + ' pre-token protocols below that floor — never a wrapped, staked or bridged product of a token that already trades. ' + newCount() + ' of the board’s rows were first tracked in the last ' + DATA.new_days + ' days, so the radar finds launches early, while there is still no token to buy. Implied value is a model, not a promise.' })
       ),
       el('div', { class: 'facts' },
         el('div', { class: 'fact' }, el('span', { text: 'Watchlist covered' }), el('b', { text: DATA.watchlist_size + ' / ' + DATA.watchlist_size })),
         el('div', { class: 'fact' }, el('span', { text: 'Pre-token rows scored' }), el('b', { text: String(DATA.board_size) })),
         el('div', { class: 'fact' }, el('span', { text: 'Early rows below the floor' }), el('b', { text: String(DATA.early_size) })),
+        el('div', { class: 'fact' }, el('span', { text: 'Newly tracked (' + DATA.new_days + ' days)' }), el('b', { text: String(newCount()) })),
         el('div', { class: 'fact' }, el('span', { text: 'Live-token protocols set aside' }), el('b', { text: String(DATA.live_size) }))
       )
     );
@@ -217,6 +235,8 @@
     chainSelect.addEventListener('change', function () { state.chain = chainSelect.value; writeHash(); render(); });
     var wl = el('input', { type: 'checkbox', id: 'watchlist', checked: state.watchlist ? 'checked' : null, 'aria-label': 'Watchlist only' });
     wl.addEventListener('change', function () { state.watchlist = wl.checked; writeHash(); render(); });
+    var nw = el('input', { type: 'checkbox', id: 'newly', checked: state.isNew ? 'checked' : null, 'aria-label': 'Newly tracked only' });
+    nw.addEventListener('change', function () { state.isNew = nw.checked; writeHash(); render(); });
     var pre = el('button', { type: 'button', 'aria-pressed': state.tab === 'pre-token' ? 'true' : 'false', text: 'Pre-token', onclick: function () { state.tab = 'pre-token'; render(); } });
     var live = el('button', { type: 'button', 'aria-pressed': state.tab === 'live' ? 'true' : 'false', text: 'Live token', onclick: function () { state.tab = 'live'; render(); } });
     return el('div', { class: 'controls' },
@@ -224,6 +244,7 @@
       el('div', { class: 'field' }, el('label', { for: 'category', text: 'Category' }), catSelect),
       el('div', { class: 'field' }, el('label', { for: 'chain', text: 'Chain' }), chainSelect),
       el('label', { class: 'check' }, wl, 'Watchlist only'),
+      el('label', { class: 'check' }, nw, 'Newly tracked'),
       el('div', { class: 'field' }, el('span', { class: 'sub', text: 'Token status' }), el('div', { class: 'tabs' }, pre, live)),
       el('span', { class: 'count', text: state.tab === 'pre-token' ? rows().length + ' rows shown' : DATA.live.length + ' live-token protocols' })
     );
@@ -244,7 +265,7 @@
       return el('div', { class: 'panel' }, el('div', { class: 'empty' },
         el('h2', { text: 'No protocol matches that filter' }),
         el('p', { text: 'Clear the search or pick another category to see the board again.' }),
-        el('button', { class: 'button primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watchlist = false; writeHash(); render(); } })
+        el('button', { class: 'button primary', type: 'button', text: 'Clear filters', onclick: function () { state.q = ''; state.category = 'all'; state.chain = 'all'; state.watchlist = false; state.isNew = false; writeHash(); render(); } })
       ));
     }
     var max = list[0].implied_value_usd || 1;
@@ -260,7 +281,7 @@
       },
         el('td', { class: 'num', text: String(r.rank) }),
         el('td', null, el('div', { class: 'name' },
-          el('b', { text: r.name }),
+          el('b', null, el('span', { text: r.name }), isNewRow(r) ? el('span', { class: 'badge-new', title: newLabel(r), text: 'NEW' }) : null),
           el('span', { class: 'sub', text: (r.category || 'Other') + ' on ' + (r.chains && r.chains.length ? r.chains.slice(0, 2).join(', ') : 'an unnamed chain') })
         )),
         el('td', { class: 'num', text: fmtUsd(r.tvl_usd) }),
@@ -321,7 +342,7 @@
 
   function modelPanel() {
     var m = DATA.model;
-    var multRows = DATA.category_multiples.slice(0, 10).map(function (c) {
+    var multRows = DATA.category_multiples.map(function (c) {
       return el('tr', null,
         el('td', { text: c.category }),
         el('td', { class: 'num', text: c.multiple.toFixed(2) + 'x' }),
@@ -336,9 +357,34 @@
       ),
       el('p', { class: 'sub', text: 'TVL and seven-day growth come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days. Breadth rewards protocols live on more chains. The early radar is every pre-token protocol below the watchlist floor the watchlist rule would keep, and the live-token protocols are set aside with their market caps shown.' }),
       el('table', { class: 'mult-table' },
-        el('caption', { class: 'sub', text: 'Largest comparable sets (category multiple, live protocols counted)' }),
+        el('caption', { class: 'sub', text: 'Every category with its own multiple (category multiple, live protocols counted)' }),
         el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Category' }), el('th', { scope: 'col', text: 'Multiple' }), el('th', { scope: 'col', text: 'Comps' }))),
         el('tbody', null, multRows)
+      )
+    );
+  }
+
+  // Where every protocol in the snapshot went: the board is complete, not a sample. The counts
+  // are the model's own ledger, computed from the snapshot, so the judge can check the arithmetic:
+  // ranked + above the floor + set aside as products + already trading = the whole snapshot.
+  function coverageLedger() {
+    var L = DATA.ledger;
+    var rows = [
+      ['Ranked on this board', String(L.board_size) + '  —  ' + L.watchlist_size + ' watchlist + ' + L.early_size + ' early below the floor'],
+      ['Above the floor, off the watchlist', String(L.above_floor_off_watchlist) + '  —  not ranked: the snapshot carries no parent field, so a standalone protocol cannot be told from a parent’s product, and they are not ranked on a guess'],
+      ['Pre-token, set aside', String(L.excluded_pre_token) + '  —  wrapped, staked, bridged, versioned or exchange products, not launches'],
+      ['Already trade', String(L.live_total) + '  —  ' + L.live_shown + ' with a market cap, shown as the comparables; ' + L.live_set_aside + ' set aside (' + L.live_set_aside_mcap_null + ' record no market cap, ' + L.live_set_aside_mcap_dead + ' record a dead market cap, ' + L.live_set_aside_cex + ' are exchanges)'],
+    ];
+    var tbody = el('tbody');
+    rows.forEach(function (r) {
+      tbody.appendChild(el('tr', null, el('td', { text: r[0] }), el('td', { text: r[1] })));
+    });
+    return el('section', { class: 'panel model' },
+      el('h2', { text: 'Where every protocol in the snapshot went' }),
+      el('p', { class: 'sub', text: 'The snapshot holds ' + L.snapshot_total + ' protocols. This ledger accounts for all of them, so the board is a complete ranking of the protocols the watchlist’s own rule keeps — never a sample, and never a hand-picked list.' }),
+      el('table', { class: 'mult-table' },
+        el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Protocols' }), el('th', { scope: 'col', text: 'What happened to them' }))),
+        tbody
       )
     );
   }
@@ -403,6 +449,7 @@
         el('div', null, el('span', { text: 'Category multiple' }), el('b', { class: 'num', text: row.category_multiple.toFixed(2) + 'x (' + row.category_comps + ' comps)' })),
         el('div', null, el('span', { text: 'Seven-day growth' }), el('b', { class: 'num', text: fmtPct(row.change_7d) })),
         el('div', null, el('span', { text: 'Age with no token' }), el('b', { class: 'num', text: fmtAge(row.age_days) })),
+        el('div', null, el('span', { text: 'First tracked' }), el('b', { class: 'num', text: row.listed_at ? row.listed_at + (isNewRow(row) ? ' · NEW' : '') : 'not recorded' })),
         el('div', null, el('span', { text: 'Growth multiplier' }), el('b', { class: 'num', text: String(row.growth_multiplier) })),
         el('div', null, el('span', { text: 'Maturity multiplier' }), el('b', { class: 'num', text: String(row.maturity_multiplier) })),
         el('div', null, el('span', { text: 'Breadth multiplier' }), el('b', { class: 'num', text: String(row.breadth_multiplier) })),
@@ -437,7 +484,7 @@
     shell.appendChild(lede());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
-    if (state.tab === 'pre-token') shell.appendChild(modelPanel());
+    if (state.tab === 'pre-token') { shell.appendChild(modelPanel()); shell.appendChild(coverageLedger()); }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);

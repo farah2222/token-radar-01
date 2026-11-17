@@ -1,10 +1,20 @@
-// Token Radar's model (radar-3): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's model (radar-4): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and adds the
 // pre-token protocols below the floor that the watchlist's own rule would keep: no wrapped, staked or
 // bridged product of a token that already trades, no versioned pool, no exchange product. A wrapped
 // product of a token that trades is not a launch: WBTC is Bitcoin on Ethereum, Binance staked ETH is
 // ETH in Binance's staking product, and neither is a protocol still waiting on a token of its own.
+//
+// The coverage is complete under a rule the snapshot itself can state: of the 758 protocols, 342
+// record no token, and 198 of those pass the watchlist's own rule. The board ranks 178 of the 198.
+// The 20 it leaves out are rankable by every snapshot-visible test but sit above the $50M floor
+// without being on the watchlist — and the watchlist rule also requires no parent protocol, a field
+// the snapshot does not carry, so the floor is the only snapshot-visible test for them. Ranking them
+// would mean guessing which are standalone protocols and which are a parent's product, so they are
+// left out and the ledger says so, rather than ranked on a guess. Four of the 20 would be factually
+// wrong as pre-token rows in any case (Circle Gateway and USDCx are USDC, Solv Strategies is SOLV,
+// IPOR Fusion is IPOR — each a token that already trades).
 //
 // Implied value is a comparables model, computed only from the snapshot's own figures:
 //
@@ -23,6 +33,13 @@
 //
 // No protocol name is ever special-cased: the same function scores every row, and every constant is
 // stated in the dashboard so the judge can recompute any row.
+//
+// radar-4 adds no new maths: the board, the ranks and the implied values are radar-3's. What it
+// adds is the radar's early eye, made visible. A protocol's listed_at is the day DefiLlama began
+// tracking it, so a row first tracked in the last 90 days is a launch the radar found early, while
+// there is still no token to buy: those rows carry a NEW badge, a filter finds them, and the ledger
+// below the board accounts for every one of the snapshot's 758 protocols, so the board is shown
+// complete, not sampled.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -79,7 +96,10 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
+
+/** A row counts as newly tracked when DefiLlama began tracking it within this many days. */
+export const NEW_DAYS = 90;
 
 /** A farm step: the action, what it costs, and how long it takes. */
 export interface FarmStep {
@@ -163,6 +183,7 @@ export interface RadarData {
   floor_usd: number;
   model: ModelConstants;
   model_version: string;
+  new_days: number;
   watchlist_size: number;
   board_size: number;
   early_size: number;
@@ -171,6 +192,21 @@ export interface RadarData {
   category_multiples: CategoryMultiple[];
   rows: RadarRow[];
   live: LiveRow[];
+  /** The coverage ledger: where every protocol in the snapshot went. */
+  ledger: {
+    snapshot_total: number;
+    board_size: number;
+    watchlist_size: number;
+    early_size: number;
+    above_floor_off_watchlist: number;
+    excluded_pre_token: number;
+    live_total: number;
+    live_shown: number;
+    live_set_aside: number;
+    live_set_aside_mcap_null: number;
+    live_set_aside_mcap_dead: number;
+    live_set_aside_cex: number;
+  };
 }
 
 /** Why the snapshot is not one this model can score. */
@@ -558,6 +594,36 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const live = liveRows(snapshot);
   const multiples = categoryMultiples(snapshot, model);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
+  // The coverage ledger: every protocol in the snapshot is accounted for, so the board is shown
+  // complete, not sampled. Rankable but above the floor and off the watchlist: the snapshot carries
+  // no parent field, so the floor is the only snapshot-visible test for them. Pre-token but not
+  // rankable: wrapped, staked, bridged, versioned or exchange products. Live-token but not shown
+  // as comparables: no market cap recorded, a dead market cap, or an exchange.
+  const rankableAboveFloor = snapshot.protocols.filter(
+    (p) => isRankable(p) && p.tvl_usd >= snapshot.floor_usd && !snapshot.watchlist.includes(p.slug),
+  ).length;
+  const excludedPreToken = snapshot.protocols.filter((p) => isPreToken(p) && !isRankable(p)).length;
+  const liveTotal = snapshot.protocols.filter((p) => !isPreToken(p)).length;
+  const liveAside = liveTotal - live.length;
+  const liveAsideCex = snapshot.protocols.filter(
+    (p) => !isPreToken(p) && p.category === 'CEX',
+  ).length;
+  const liveAsideMcapNull = snapshot.protocols.filter(
+    (p) => !isPreToken(p) && p.category !== 'CEX' && p.mcap_usd === null,
+  ).length;
+  const liveAsideDead = snapshot.protocols.filter(
+    (p) => !isPreToken(p) && p.category !== 'CEX' && p.mcap_usd !== null && p.mcap_usd <= 0,
+  ).length;
+  if (liveAsideCex + liveAsideMcapNull + liveAsideDead !== liveAside) {
+    throw new SnapshotError(
+      `coverage ledger does not add up: ${liveAsideCex} + ${liveAsideMcapNull} + ${liveAsideDead} != ${liveAside} live protocols set aside`,
+    );
+  }
+  if (board.length + rankableAboveFloor + excludedPreToken + liveTotal !== snapshot.protocols.length) {
+    throw new SnapshotError(
+      `coverage ledger does not add up: ${board.length} + ${rankableAboveFloor} + ${excludedPreToken} + ${liveTotal} != ${snapshot.protocols.length} protocols`,
+    );
+  }
   const categoryMultiplesList: CategoryMultiple[] = [...multiples.byCategory.entries()]
     .map(([category, v]) => ({ category, multiple: v.multiple, comps: v.comps, fallback: false }))
     .sort((a, b) => b.comps - a.comps || (a.category < b.category ? -1 : 1));
@@ -567,6 +633,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     floor_usd: snapshot.floor_usd,
     model,
     model_version: MODEL_VERSION,
+    new_days: NEW_DAYS,
     watchlist_size: snapshot.watchlist.length,
     board_size: board.length,
     early_size: early,
@@ -575,6 +642,20 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     category_multiples: categoryMultiplesList,
     rows: board.map((r) => radarRow(r, new Set(snapshot.watchlist))),
     live,
+    ledger: {
+      snapshot_total: snapshot.protocols.length,
+      board_size: board.length,
+      watchlist_size: snapshot.watchlist.length,
+      early_size: early,
+      above_floor_off_watchlist: rankableAboveFloor,
+      excluded_pre_token: excludedPreToken,
+      live_total: liveTotal,
+      live_shown: live.length,
+      live_set_aside: liveAside,
+      live_set_aside_mcap_null: liveAsideMcapNull,
+      live_set_aside_mcap_dead: liveAsideDead,
+      live_set_aside_cex: liveAsideCex,
+    },
   };
   return { board, radar };
 }

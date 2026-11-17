@@ -31,7 +31,7 @@ body {
 .lede { margin: 22px 0 16px; }
 .lede h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; }
 .lede p { color: var(--muted); margin: 0; max-width: 760px; }
-.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 .fact { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .fact span { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .fact b { font-size: 22px; }
@@ -61,6 +61,7 @@ tbody tr { cursor: pointer; }
 tbody tr:hover, tbody tr[data-selected="true"] { background: var(--panel-2); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .name b { display: block; }
+.badge-new { background: #3a2f10; color: var(--accent-2); border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; margin-left: 6px; vertical-align: middle; letter-spacing: .04em; }
 .name .sub, .sub { color: var(--muted); font-size: 13px; }
 .pos { color: var(--pos); }
 .neg { color: var(--neg); }
