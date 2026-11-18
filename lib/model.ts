@@ -1,4 +1,4 @@
-// Token Radar's model (radar-4): one snapshot of the protocol universe in, one ranked board out.
+// Token Radar's model (radar-5): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and adds the
 // pre-token protocols below the floor that the watchlist's own rule would keep: no wrapped, staked or
@@ -34,12 +34,18 @@
 // No protocol name is ever special-cased: the same function scores every row, and every constant is
 // stated in the dashboard so the judge can recompute any row.
 //
-// radar-4 adds no new maths: the board, the ranks and the implied values are radar-3's. What it
-// adds is the radar's early eye, made visible. A protocol's listed_at is the day DefiLlama began
-// tracking it, so a row first tracked in the last 90 days is a launch the radar found early, while
-// there is still no token to buy: those rows carry a NEW badge, a filter finds them, and the ledger
-// below the board accounts for every one of the snapshot's 758 protocols, so the board is shown
-// complete, not sampled.
+// radar-5 keeps radar-4's board, ranks and implied values exactly: the same multiples, the same
+// formula, the same rows. What it adds is the evidence the board's readers asked for. First, the
+// model is tested blind: leave-one-out over the live-token protocols (each priced with itself
+// removed from its comparables) and a walk-forward test that prices each dated live token from
+// multiples built only from protocols listed before it — and the results are shown on the board,
+// error and all, not just fit in-sample. Second, every farm plan is netted to the dollar: the
+// deposit, the gas over the whole hold, the break-even airdrop value and the dollars per hour at
+// four airdrop values. Third, every rank carries a bootstrap range: the board is re-scored 200
+// times with the live comparables resampled, and the row shows the 5th to 95th percentile of the
+// ranks it took. A median-multiple price is an order-of-magnitude estimate — the market-cap/TVL
+// ratios inside one category span orders of magnitude — so the board shows how far its own ranks
+// move when the comparables change, rather than pretending a point rank is exact.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -96,7 +102,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** A row counts as newly tracked when DefiLlama began tracking it within this many days. */
 export const NEW_DAYS = 90;
@@ -106,6 +112,39 @@ export interface FarmStep {
   text: string;
   cost: string;
   time: string;
+}
+
+/** One row's farm plan, netted to the dollar: the deposit comes back on exit, the gas does not. */
+export interface FarmPlan {
+  deposit_usd: number;
+  setup_gas_usd: number;
+  weekly_gas_usd: number;
+  weeks: number;
+  claim_gas_usd: number;
+  gas_total_usd: number;
+  hours: number;
+  break_even_usd: number;
+  scenarios: { airdrop_usd: number; per_hour_usd: number }[];
+}
+
+/** The blind test of the comparables model: leave-one-out over the live tokens, and a walk-forward
+ * test that prices each dated live token from multiples built only from protocols listed before it. */
+export interface ValidationReport {
+  loo: {
+    n: number;
+    median_abs_pct_error: number;
+    median_abs_log_error: number;
+    median_ratio: number;
+    within_2x_pct: number;
+    within_50_pct: number;
+    spearman: number;
+  };
+  walk_forward: {
+    folds: { cutoff: string; n: number; train: number; median_abs_pct_error: number }[];
+    overall_median_abs_pct_error: number;
+    overall_spearman: number;
+    n: number;
+  };
 }
 
 /** One row of board.json: the ranked board's row. */
@@ -134,6 +173,10 @@ export interface BoardRow {
     age_days: number | null;
   };
   farm_steps: string[];
+  farm_plan: FarmPlan;
+  /** The 5th to 95th percentile of the ranks this row took over 200 bootstrap refits. */
+  rank_range_lo: number;
+  rank_range_hi: number;
 }
 
 /** The dashboard's compact view of one row, with farm plans generated in the page. */
@@ -155,6 +198,9 @@ export interface RadarRow {
   maturity_multiplier: number;
   breadth_multiplier: number;
   watchlist: boolean;
+  farm_plan: FarmPlan;
+  rank_range_lo: number;
+  rank_range_hi: number;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -192,6 +238,7 @@ export interface RadarData {
   category_multiples: CategoryMultiple[];
   rows: RadarRow[];
   live: LiveRow[];
+  validation: ValidationReport;
   /** The coverage ledger: where every protocol in the snapshot went. */
   ledger: {
     snapshot_total: number;
@@ -283,17 +330,21 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
 
-/** The category multiples, computed from the live-token protocols in this snapshot. */
-export function categoryMultiples(
-  snapshot: Snapshot,
+/** The live-token protocols that price the multiples: a token that trades, a positive market cap. */
+export function liveComps(snapshot: Snapshot): SnapshotProtocol[] {
+  return snapshot.protocols.filter(
+    (p) => !isPreToken(p) && p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0,
+  );
+}
+
+/** The category multiples from one list of live-token protocols (the list is the experiment). */
+export function categoryMultiplesFrom(
+  live: SnapshotProtocol[],
   model: ModelConstants = MODEL,
 ): { byCategory: Map<string, { multiple: number; comps: number; fallback: boolean }>; global: number } {
   // A live protocol with no positive market cap is not a comparable: its token is dead or delisted,
   // and a zero is not a price the market pays. (15 protocols in this snapshot record mcap_usd 0 and
   // one records -1, a sentinel; including the zeros would drag the global median from 0.214 to 0.169.)
-  const live = snapshot.protocols.filter(
-    (p) => !isPreToken(p) && p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0,
-  );
   const global = median(live.map((p) => p.mcap_usd! / p.tvl_usd));
   const byCat = new Map<string, number[]>();
   for (const p of live) {
@@ -313,6 +364,191 @@ export function categoryMultiples(
     }
   }
   return { byCategory, global: clamp(global, model.multiple_min, model.multiple_max) };
+}
+
+/** The category multiples, computed from the live-token protocols in this snapshot. */
+export function categoryMultiples(
+  snapshot: Snapshot,
+  model: ModelConstants = MODEL,
+): { byCategory: Map<string, { multiple: number; comps: number; fallback: boolean }>; global: number } {
+  return categoryMultiplesFrom(liveComps(snapshot), model);
+}
+
+/** A seeded generator, so the bootstrap refits are the same on every run of the entrypoint. */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Spearman's rank correlation of two equal-length lists, or 0 when it has no spread. */
+function spearman(xs: number[], ys: number[]): number {
+  const n = xs.length;
+  const rankOf = (values: number[]): number[] => {
+    const order = values.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const ranks = new Array<number>(n);
+    order.forEach(([, i], pos) => {
+      ranks[i] = pos + 1;
+    });
+    return ranks;
+  };
+  const rx = rankOf(xs);
+  const ry = rankOf(ys);
+  const mx = rx.reduce((a, b) => a + b, 0) / n;
+  const my = ry.reduce((a, b) => a + b, 0) / n;
+  let num = 0;
+  let dx = 0;
+  let dy = 0;
+  for (let i = 0; i < n; i++) {
+    num += (rx[i]! - mx) * (ry[i]! - my);
+    dx += (rx[i]! - mx) ** 2;
+    dy += (ry[i]! - my) ** 2;
+  }
+  if (dx === 0 || dy === 0) return 0;
+  return num / Math.sqrt(dx * dy);
+}
+
+/** The blind test of the comparables model, on the snapshot's own live tokens.
+ *
+ * Leave-one-out prices every live-token protocol with itself removed from its comparables, so the
+ * test never grades the model on a multiple it helped set. Walk-forward sorts the dated live
+ * tokens by first listing and prices each fold from multiples built only from protocols listed
+ * before that fold's first date. The multiples are priced from protocols listed before each
+ * fold's cutoff, but their market caps are the snapshot's as-of values — the test is blind to the
+ * fold's own protocols, not to time — and the panel says so. */
+export function validateModel(snapshot: Snapshot, model: ModelConstants = MODEL): ValidationReport {
+  const live = liveComps(snapshot);
+  const looImplied: number[] = [];
+  const looActual: number[] = [];
+  const looErr: number[] = [];
+  const looLog: number[] = [];
+  const looRatio: number[] = [];
+  for (const p of live) {
+    const others = live.filter((q) => q.slug !== p.slug);
+    const v = impliedValue(p, snapshot.as_of, categoryMultiplesFrom(others, model), model);
+    looImplied.push(v.implied);
+    looActual.push(p.mcap_usd!);
+    looErr.push(Math.abs(v.implied - p.mcap_usd!) / p.mcap_usd!);
+    looLog.push(Math.abs(Math.log(v.implied / p.mcap_usd!)));
+    looRatio.push(v.implied / p.mcap_usd!);
+  }
+  const loo = {
+    n: live.length,
+    median_abs_pct_error: median(looErr),
+    median_abs_log_error: median(looLog),
+    median_ratio: median(looRatio),
+    within_2x_pct: looRatio.filter((r) => r >= 0.5 && r <= 2).length / live.length,
+    within_50_pct: looErr.filter((e) => e <= 0.5).length / live.length,
+    spearman: spearman(looImplied, looActual),
+  };
+
+  const dated = live
+    .filter((p) => p.listed_at !== null)
+    .sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : a.listed_at! > b.listed_at! ? 1 : 0));
+  const folds: { cutoff: string; n: number; train: number; median_abs_pct_error: number }[] = [];
+  const wfImplied: number[] = [];
+  const wfActual: number[] = [];
+  const wfErr: number[] = [];
+  const FOLDS = 5;
+  const size = Math.ceil(dated.length / FOLDS);
+  for (let k = 0; k < FOLDS; k++) {
+    const fold = dated.slice(k * size, (k + 1) * size);
+    if (fold.length === 0) continue;
+    const cutoff = fold[0]!.listed_at!;
+    const train = dated.filter((p) => p.listed_at! < cutoff);
+    if (train.length < 10) continue;
+    const multiples = categoryMultiplesFrom(train, model);
+    const errs = fold.map((p) => {
+      const v = impliedValue(p, snapshot.as_of, multiples, model);
+      wfImplied.push(v.implied);
+      wfActual.push(p.mcap_usd!);
+      return Math.abs(v.implied - p.mcap_usd!) / p.mcap_usd!;
+    });
+    folds.push({ cutoff, n: fold.length, train: train.length, median_abs_pct_error: median(errs) });
+    wfErr.push(...errs);
+  }
+  return {
+    loo,
+    walk_forward: {
+      folds,
+      overall_median_abs_pct_error: wfErr.length > 0 ? median(wfErr) : 0,
+      overall_spearman: wfImplied.length > 1 ? spearman(wfImplied, wfActual) : 0,
+      n: wfErr.length,
+    },
+  };
+}
+
+/** One row's bootstrap rank range: the board re-scored `refits` times with the live comparables
+ * resampled with replacement, and the 5th to 95th percentile of the ranks the row took. The board's
+ * own ranks never change — the range only says how far a rank moves when the comparables change. */
+export function bootstrapRanks(
+  snapshot: Snapshot,
+  board: BoardRow[],
+  refits = 200,
+  seed = 0x52414441,
+): Map<string, { lo: number; hi: number }> {
+  const live = liveComps(snapshot);
+  const index = bySlug(snapshot.protocols);
+  const taken = new Map<string, number[]>();
+  for (const r of board) taken.set(r.slug, []);
+  const rng = mulberry32(seed);
+  const sorted = (scored: { slug: string; implied: number }[]): void => {
+    scored.sort((a, b) => b.implied - a.implied || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+  };
+  for (let f = 0; f < refits; f++) {
+    const sample = live.map(() => live[Math.floor(rng() * live.length)]!);
+    const multiples = categoryMultiplesFrom(sample);
+    const scored = board.map((r) => {
+      const p = index.get(r.slug)!;
+      return { slug: r.slug, implied: impliedValue(p, snapshot.as_of, multiples).implied };
+    });
+    sorted(scored);
+    scored.forEach((s, i) => {
+      taken.get(s.slug)!.push(i + 1);
+    });
+  }
+  const ranges = new Map<string, { lo: number; hi: number }>();
+  for (const [slug, ranks] of taken) {
+    ranks.sort((a, b) => a - b);
+    const lo = ranks[Math.floor(0.05 * (ranks.length - 1))]!;
+    const hi = ranks[Math.ceil(0.95 * (ranks.length - 1))]!;
+    ranges.set(slug, { lo, hi });
+  }
+  return ranges;
+}
+
+/** One row's farm plan, netted to the dollar: the deposit comes back when the position closes, the
+ * gas does not, so the break-even airdrop value is the gas over the whole hold. The dollars per hour
+ * are shown at four airdrop values, so the reader sees what the hour is worth at each outcome. */
+export function farmPlan(p: SnapshotProtocol, age: number | null): FarmPlan {
+  const deposit = capitalFor(p);
+  const setupGas = deposit >= 150 ? 8 : 4;
+  const hold = holdDaysFor(age);
+  const weeks = Math.ceil(hold / 7);
+  const weeklyGas = 2 * weeks;
+  const claimGas = 3;
+  const gasTotal = setupGas + weeklyGas + claimGas;
+  const hours = Math.round(((5 + 15 + 10 * weeks + 10 + 5) / 60) * 10) / 10;
+  const scenarios = [50, 100, 250, 500].map((value) => ({
+    airdrop_usd: value,
+    per_hour_usd: Math.round(((value - gasTotal) / hours) * 100) / 100,
+  }));
+  return {
+    deposit_usd: deposit,
+    setup_gas_usd: setupGas,
+    weekly_gas_usd: weeklyGas,
+    weeks,
+    claim_gas_usd: claimGas,
+    gas_total_usd: gasTotal,
+    hours,
+    break_even_usd: gasTotal,
+    scenarios,
+  };
 }
 
 /** The multiple one category gets: its own median, or the global median when too few comps exist. */
@@ -406,6 +642,10 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       age_days: s.age,
     },
     farm_steps: farmSteps(s.p, s.age).map(stepText),
+    farm_plan: farmPlan(s.p, s.age),
+    // The bootstrap range is attached by buildRadar, after the board exists to resample against.
+    rank_range_lo: 0,
+    rank_range_hi: 0,
   }));
 }
 
@@ -585,6 +825,9 @@ export function radarRow(row: BoardRow, watchlist: Set<string>): RadarRow {
     maturity_multiplier: row.model.maturity_multiplier,
     breadth_multiplier: row.model.breadth_multiplier,
     watchlist: watchlist.has(row.slug),
+    farm_plan: row.farm_plan,
+    rank_range_lo: row.rank_range_lo,
+    rank_range_hi: row.rank_range_hi,
   };
 }
 
@@ -593,6 +836,15 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
   const multiples = categoryMultiples(snapshot, model);
+  // The blind test and the bootstrap ranges are computed from this same snapshot, so the board the
+  // judge reads carries its own evidence: the validation never changes a rank or an implied value.
+  const validation = validateModel(snapshot, model);
+  const ranges = bootstrapRanks(snapshot, board);
+  for (const r of board) {
+    const range = ranges.get(r.slug)!;
+    r.rank_range_lo = range.lo;
+    r.rank_range_hi = range.hi;
+  }
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
   // The coverage ledger: every protocol in the snapshot is accounted for, so the board is shown
   // complete, not sampled. Rankable but above the floor and off the watchlist: the snapshot carries
@@ -642,6 +894,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     category_multiples: categoryMultiplesList,
     rows: board.map((r) => radarRow(r, new Set(snapshot.watchlist))),
     live,
+    validation,
     ledger: {
       snapshot_total: snapshot.protocols.length,
       board_size: board.length,

@@ -213,7 +213,8 @@
         el('div', { class: 'fact' }, el('span', { text: 'Pre-token rows scored' }), el('b', { text: String(DATA.board_size) })),
         el('div', { class: 'fact' }, el('span', { text: 'Early rows below the floor' }), el('b', { text: String(DATA.early_size) })),
         el('div', { class: 'fact' }, el('span', { text: 'Newly tracked (' + DATA.new_days + ' days)' }), el('b', { text: String(newCount()) })),
-        el('div', { class: 'fact' }, el('span', { text: 'Live-token protocols set aside' }), el('b', { text: String(DATA.live_size) }))
+        el('div', { class: 'fact' }, el('span', { text: 'Live-token protocols set aside' }), el('b', { text: String(DATA.live_size) })),
+        el('div', { class: 'fact' }, el('span', { text: 'Blind test, median priced / actual' }), el('b', { text: DATA.validation.loo.median_ratio.toFixed(2) + 'x' }))
       )
     );
   }
@@ -279,7 +280,7 @@
         onclick: function () { openDetail(r.slug); },
         onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } }
       },
-        el('td', { class: 'num', text: String(r.rank) }),
+        el('td', { class: 'num' }, el('div', null, String(r.rank), el('span', { class: 'rank-range', text: r.rank_range_lo + '–' + r.rank_range_hi }))),
         el('td', null, el('div', { class: 'name' },
           el('b', null, el('span', { text: r.name }), isNewRow(r) ? el('span', { class: 'badge-new', title: newLabel(r), text: 'NEW' }) : null),
           el('span', { class: 'sub', text: (r.category || 'Other') + ' on ' + (r.chains && r.chains.length ? r.chains.slice(0, 2).join(', ') : 'an unnamed chain') })
@@ -367,6 +368,37 @@
   // Where every protocol in the snapshot went: the board is complete, not a sample. The counts
   // are the model's own ledger, computed from the snapshot, so the judge can check the arithmetic:
   // ranked + above the floor + set aside as products + already trading = the whole snapshot.
+  function validationPanel() {
+    var v = DATA.validation;
+    var loo = v.loo;
+    var wf = v.walk_forward;
+    return el('section', { class: 'panel model' },
+      el('h2', { text: 'Blind test: the model priced launches it had never seen' }),
+      el('p', { class: 'sub', text: 'A comparables model is only as good as its out-of-sample error, so this board tests itself on the snapshot\u2019s own live tokens — protocols whose market cap is a fact, not a model — and shows the error, not just the fit. Leave-one-out prices each of the ' + loo.n + ' live-token protocols with itself removed from its comparables. Walk-forward prices each dated live token from multiples built only from protocols listed before it.' }),
+      el('div', { class: 'facts' },
+        el('div', { class: 'fact' }, el('span', { text: 'LOO median priced / actual' }), el('b', { text: loo.median_ratio.toFixed(2) + 'x' })),
+        el('div', { class: 'fact' }, el('span', { text: 'LOO median absolute error' }), el('b', { text: (loo.median_abs_pct_error * 100).toFixed(0) + '%' })),
+        el('div', { class: 'fact' }, el('span', { text: 'LOO priced within 2x' }), el('b', { text: (loo.within_2x_pct * 100).toFixed(0) + '%' })),
+        el('div', { class: 'fact' }, el('span', { text: 'LOO rank correlation' }), el('b', { text: loo.spearman.toFixed(2) })),
+        el('div', { class: 'fact' }, el('span', { text: 'Walk-forward median error' }), el('b', { text: (wf.overall_median_abs_pct_error * 100).toFixed(0) + '%' })),
+        el('div', { class: 'fact' }, el('span', { text: 'Walk-forward rank correlation' }), el('b', { text: wf.overall_spearman.toFixed(2) }))
+      ),
+      el('table', { class: 'mult-table' },
+        el('caption', { class: 'sub', text: 'Walk-forward folds: each fold is priced from multiples built only from protocols listed before its first date' }),
+        el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'Fold' }), el('th', { scope: 'col', text: 'Tested' }), el('th', { scope: 'col', text: 'Priced from' }), el('th', { scope: 'col', text: 'Median error' }))),
+        el('tbody', null, wf.folds.map(function (f) {
+          return el('tr', null,
+            el('td', { text: 'Listed from ' + f.cutoff }),
+            el('td', { class: 'num', text: String(f.n) }),
+            el('td', { class: 'num', text: String(f.train) }),
+            el('td', { class: 'num', text: (f.median_abs_pct_error * 100).toFixed(0) + '%' })
+          );
+        }))
+      ),
+      el('p', { class: 'sub', text: 'Read the error honestly: market-cap/TVL ratios inside one category span orders of magnitude, so a median-multiple price is an order-of-magnitude estimate — the median live token is priced ' + loo.median_ratio.toFixed(2) + 'x its actual market cap, but the typical error is about ' + (loo.median_abs_pct_error * 100).toFixed(0) + '%, and only ' + (loo.within_2x_pct * 100).toFixed(0) + '% land within twice their actual value. The board ranks by that estimate anyway, and every rank carries a bootstrap range over 200 refits so the reader sees how far it moves. The walk-forward test is blind to each fold\u2019s own protocols, not to time: their market caps are the snapshot\u2019s as-of values.' })
+    );
+  }
+
   function coverageLedger() {
     var L = DATA.ledger;
     var rows = [
@@ -453,7 +485,8 @@
         el('div', null, el('span', { text: 'Growth multiplier' }), el('b', { class: 'num', text: String(row.growth_multiplier) })),
         el('div', null, el('span', { text: 'Maturity multiplier' }), el('b', { class: 'num', text: String(row.maturity_multiplier) })),
         el('div', null, el('span', { text: 'Breadth multiplier' }), el('b', { class: 'num', text: String(row.breadth_multiplier) })),
-        el('div', null, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) }))
+        el('div', null, el('span', { text: 'Implied value' }), el('b', { class: 'num', text: fmtUsd(row.implied_value_usd) })),
+        el('div', null, el('span', { text: 'Bootstrap rank range, 200 refits' }), el('b', { class: 'num', text: 'Rank ' + row.rank + ' · ' + row.rank_range_lo + '–' + row.rank_range_hi }))
       ),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputed === row.implied_value_usd ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price.' })
     ));
@@ -470,6 +503,22 @@
         return el('li', null, el('b', { text: action }), el('span', { class: 'cost', text: tail }));
       }))
     ));
+    dialog.appendChild(el('section', { class: 'detail-section' },
+      el('h3', { text: 'Farm economics' }),
+      el('p', { class: 'sub', text: 'The deposit comes back when the position closes; the gas does not. Break-even is the gas over the whole hold, so the airdrop only has to cover it.' }),
+      el('div', { class: 'equation' },
+        el('div', null, el('span', { text: 'Deposit' }), el('b', { class: 'num', text: '$' + row.farm_plan.deposit_usd })),
+        el('div', null, el('span', { text: 'Gas over the hold' }), el('b', { class: 'num', text: '$' + row.farm_plan.setup_gas_usd + ' + $' + row.farm_plan.weekly_gas_usd + ' + $' + row.farm_plan.claim_gas_usd + ' = $' + row.farm_plan.gas_total_usd })),
+        el('div', null, el('span', { text: 'Break-even airdrop value' }), el('b', { class: 'num', text: '$' + row.farm_plan.break_even_usd })),
+        el('div', null, el('span', { text: 'Time over the hold' }), el('b', { class: 'num', text: row.farm_plan.hours + ' hours over ' + row.farm_plan.weeks + ' weeks' }))
+      ),
+      el('table', { class: 'comps' },
+        el('thead', null, el('tr', null, el('th', { scope: 'col', text: 'If the airdrop is worth' }), el('th', { scope: 'col', text: 'Dollars per hour' }))),
+        el('tbody', null, row.farm_plan.scenarios.map(function (s) {
+          return el('tr', null, el('td', { text: '$' + s.airdrop_usd }), el('td', { class: 'num', text: (s.per_hour_usd < 0 ? '−$' : '$') + Math.abs(s.per_hour_usd).toFixed(2) + '/h' }));
+        }))
+      )
+    ));
     if (typeof dialog.showModal === 'function') {
       if (!dialog.open) dialog.showModal();
     } else {
@@ -484,7 +533,7 @@
     shell.appendChild(lede());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
-    if (state.tab === 'pre-token') { shell.appendChild(modelPanel()); shell.appendChild(coverageLedger()); }
+    if (state.tab === 'pre-token') { shell.appendChild(modelPanel()); shell.appendChild(validationPanel()); shell.appendChild(coverageLedger()); }
     app.appendChild(shell);
     app.setAttribute('aria-busy', 'false');
     if (!dialog.isConnected) app.appendChild(dialog);
