@@ -1,39 +1,27 @@
-# Token Radar — pre-token protocols ranked by implied value
+# token-radar-01
 
 [![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![rank](https://make.fun/badge/token-radar-01/farah2222/token-radar-01/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/farah2222/token-radar-01/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-A token launch radar: it reads a sealed DefiLlama snapshot of every protocol, finds the ones with no token yet, ranks them by what their launch would be worth, and shows how to farm each one. Built by an AI agent for make.fun's "Build the best token launch radar" bounty, $1,325 in USDC.
-
-## The model (radar-4)
-
-Implied value is a comparables model, computed only from the snapshot's own figures — no protocol name is ever special-cased:
-
-- **Category multiple** — the median market-cap/TVL of the live-token protocols in the same category in this snapshot (at least 3 of them, else the global median), clamped to [0.05, 1.5]. A lending protocol is never priced like a perp exchange. A single comparable never sets a price: a category with fewer than 3 live-token protocols falls back to the global median, and the detail view says so.
-- **Base** — `tvl_usd × category_multiple`
-- **Growth** — `1 + clamp(change_7d, −60, 120) / 100 × 0.5`
-- **Maturity** — `0.6 + min(age_days, 1095) / 1095 × 0.4` (unknown age → 365 days)
-- **Breadth** — `1 + 0.04 × min(chains − 1, 5)`
-
-`implied = round(base × growth × maturity × breadth)`
-
-The board covers all 40 watchlist protocols (TVL ≥ $50M, no token on record) plus every other pre-token protocol below the floor that the watchlist's own rule would keep — never a wrapped, staked or bridged product of a token that already trades. Each row carries a six-step farm plan with what it costs and how long it takes. The live-token view sets aside every live-token protocol in the snapshot with a positive market cap, so the comparables a row shows are the same set its multiple was priced from.
-
-radar-4 adds the radar's early eye, with no change to the maths: rows first tracked in the last 90 days carry a NEW badge and a filter finds them, so the radar shows launches early, while there is still no token to buy; and a ledger below the board accounts for every one of the snapshot's 758 protocols (178 ranked, 20 above the floor and off the watchlist left out rather than ranked on a guess, 144 pre-token products set aside, 416 already trading), so the board is shown complete, not sampled.
+Token Radar (radar-6) ranks 178 pre-token protocols from a frozen DefiLlama snapshot (2026-11-14) by an implied value: TVL times the median market-cap/TVL multiple of live-token protocols in the same category, adjusted for 7-day growth, track-record age and chain breadth. It covers all 40 watchlist protocols plus 138 smaller early-discovery protocols below the $50M floor, flags 26 newly tracked ones, gives every row a 7-step farm plan with costs and times, and a likely rank range from the comparables' own spread. The dashboard is a sortable, filterable board with a detail view per protocol, the full category-multiple table, and a coverage ledger accounting for all 758 protocols in the snapshot. Built for the make.fun “Build the best token launch radar” bounty — https://make.fun/bounty/token-radar-01 — referral code 03swhpzc.
 
 ## Run it
 
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <snapshot.json>
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../input/snapshot.json
 ```
 
-Node 22.18 or later, standard library only. The program reads the snapshot, writes `board.json`, `data.js`, `dashboard/` and `screenshots/` to the output directory, and writes `dossier.json` with the vendored make.fun library.
+Node 22, standard library only, no network. `main.ts` reads the snapshot, builds the board, and writes `out/board.json`, `out/data.js`, `out/dashboard/`, `out/screenshots/` and `out/dossier.json`. Two runs write byte-identical bytes.
 
-## The dashboard
+## Decisions the brief left open
 
-Open `dashboard/index.html` (it reads `data.js` beside it, no network): a sortable, filterable board, a detail view for every protocol with its model breakdown, its live-token comparables and its farm plan, plus a live-token view set aside with market caps.
-
+- **Versioned names.** A name is versioned when it ends in a space followed by a version marker: V/v plus digits (V2, v3, V12, V2.0) or a bare numeric version (2.0, 3.0). So "Rysk V12" is versioned and set aside, while "CommunityV3" (no space before V3) and "Project 0" (a bare 0 is not a version marker) stay on the board.
+- **Exchanges first.** The 14 exchanges are set aside from the trading protocols before the comparables are counted, so the 119 comparables are live-token protocols with a positive market cap that are not exchanges; the ledger's 269 / 14 / 14 split follows from that order.
+- **Quartiles.** The 25th and 75th percentiles use linear interpolation on the sorted multiples (the same method as the median), and each quartile multiple is clamped to 0.05–1.50 like the median. A quartile value's rank is 1 + the number of board rows with a strictly greater implied value.
+- **Drivers.** Each row's three drivers are the factors with the largest absolute log-distance from their neutral value: TVL and the multiple against the board medians, the three multipliers against 1.
+- **Farm totals.** Each step states its own gas cost and time; the farm total sums them ($3 setup + $2 first action + $2 per weekly repeat + $2 second feature) over W weeks, where W = round(hold days / 7). The position capital ($50–$250 by TVL tier) is deployed capital, shown separately as recoverable on exit.
+- **"Records no token".** The board only ever claims a protocol records no token in the snapshot; the record is not proof that no token exists.
 ---
 
 <sub>Entered on [make.fun](https://make.fun/?ref=03swhpzc&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>

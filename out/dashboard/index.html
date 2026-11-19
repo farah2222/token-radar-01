@@ -1,14 +1,93 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar: pre-token protocols ranked by implied value</title>
+<title>Token Radar — radar-6</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<a class="skip" href="#board">Skip to the board</a>
-<main id="board" tabindex="-1" aria-busy="true"></main>
+<header class="head">
+  <div>
+    <h1>Token Radar</h1>
+    <p class="sub">Pre-token protocols, ranked by implied value. Model <strong>radar-6</strong> · Snapshot <strong>2026-11-14</strong> (DefiLlama) · <strong>178</strong> ranked · <strong>40</strong> watchlist · <strong>26</strong> newly tracked</p>
+  </div>
+  <div class="head-note">Implied value = TVL × category multiple × growth × maturity × breadth. Every figure comes from the snapshot; no protocol name is hardcoded.</div>
+</header>
+
+<nav class="controls" aria-label="Board controls">
+  <input id="q" type="search" placeholder="Search name, slug or category…" aria-label="Search">
+  <select id="cat" aria-label="Category"><option value="">All categories</option></select>
+  <label class="chk"><input id="wl" type="checkbox"> Watchlist only</label>
+  <label class="chk"><input id="nt" type="checkbox"> Newly tracked only</label>
+  <select id="sort" aria-label="Sort by">
+    <option value="rank">Sort: rank</option>
+    <option value="value">Sort: implied value</option>
+    <option value="tvl">Sort: TVL</option>
+    <option value="change">Sort: 7-day change</option>
+    <option value="age">Sort: age (oldest first)</option>
+  </select>
+  <div class="views" role="group" aria-label="View">
+    <button id="v-board" class="on" type="button">Pre-token board</button>
+    <button id="v-live" type="button">Live tokens</button>
+  </div>
+</nav>
+<p id="count" class="count" aria-live="polite"></p>
+
+<main>
+  <section id="board-sec">
+    <table id="board">
+      <thead><tr>
+        <th>Rank</th><th>Protocol</th><th>Category</th><th>TVL</th><th>7-day</th>
+        <th>First tracked</th><th>Chains</th><th>Implied value</th><th>Multiple</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+
+  <section id="detail" class="detail" hidden></section>
+
+  <section id="live-sec" hidden>
+    <h2>Live tokens — already trading, not ranked</h2>
+    <p class="note">These 119 protocols already have a token with a market cap. They are the comparables the multiples come from; they are not farm targets and never appear on the pre-token board.</p>
+    <table id="live">
+      <thead><tr><th>#</th><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>Mcap / TVL</th></tr></thead>
+      <tbody id="live-rows"></tbody>
+    </table>
+  </section>
+
+  <section id="model" class="panel">
+    <h2>How the value is worked out</h2>
+    <p class="formula">Implied value = max(1, round(TVL × category multiple × growth × maturity × breadth))</p>
+    <ul class="formula-list">
+      <li><strong>Category multiple</strong> — median Mcap/TVL of the live-token protocols in the same category (at least 3 needed); otherwise the global median across all 119 live-token protocols. Clamped to 0.05–1.50.</li>
+      <li><strong>Growth</strong> — 1 + clamp(7-day change, −60, 120) / 100 × 0.5. A missing 7-day change counts as 0.</li>
+      <li><strong>Maturity</strong> — 0.6 + min(age in days, 1095) / 1095 × 0.4. Age is the snapshot date minus the day DefiLlama first tracked the protocol; unknown counts as 365 days.</li>
+      <li><strong>Breadth</strong> — 1 + 0.04 × min(chains − 1, 5).</li>
+      <li><strong>Likely rank A–B</strong> — the same calculation with the category's 25th and 75th percentile multiples instead of the median, showing the ranks those values would take. It is the comparables' own spread, not a guess.</li>
+    </ul>
+    <h3>Category multiples</h3>
+    <table id="cats">
+      <thead><tr><th>Category</th><th>Multiple used</th><th>Source</th><th>Comparables</th><th>25th pct</th><th>Median</th><th>75th pct</th></tr></thead>
+      <tbody id="cat-rows"></tbody>
+    </table>
+  </section>
+
+  <section id="ledger" class="panel">
+    <h2>Coverage ledger — all 758 protocols accounted for</h2>
+    <table id="ledger-table">
+      <thead><tr><th>Group</th><th>Count</th><th>What it is</th></tr></thead>
+      <tbody id="ledger-rows"></tbody>
+    </table>
+    <p class="note">Protocols at or above the $50M floor that are not on the watchlist are left off the board on purpose: above the floor, a pre-token-looking protocol the watchlist left out is almost certainly a chain deployment or product of a protocol whose token already trades, and the snapshot carries no parent field to tell them apart — ranking them would be a guess.</p>
+    <p class="note">"Records no token" means the snapshot lists no token for the protocol; the record is not proof that no token exists.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Built for the make.fun “Build the best token launch radar” bounty (token-radar-01). Referral code 03swhpzc. Data: DefiLlama snapshot 2026-11-14. Nothing here is financial advice.</p>
+</footer>
+
 <script src="../data.js"></script>
 <script src="app.js"></script>
 </body>
