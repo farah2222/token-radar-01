@@ -69,3 +69,21 @@ footer{padding:0 24px 24px;color:var(--muted);font-size:13px}
   .head-note{max-width:none}
   th:nth-child(3),td:nth-child(3),th:nth-child(7),td:nth-child(7){display:none}
 }
+
+/* radar-7 additions: integrity strip, status tags, flag note, negatives */
+.strip{display:flex;flex-wrap:wrap;gap:6px 22px;padding:10px 24px;
+  border-bottom:1px solid var(--line);background:var(--row);
+  font-size:13px;color:var(--muted)}
+.strip span{white-space:nowrap}
+.strip strong{color:var(--ink)}
+.tag-live{display:inline-block;font-size:11px;font-weight:700;color:var(--muted);
+  border:1px solid var(--muted);border-radius:4px;padding:0 5px;margin-left:6px}
+.tag-flag{display:inline-block;font-size:11px;font-weight:700;color:#8a5a00;
+  border:1px solid #c99a2b;border-radius:4px;padding:0 5px;margin-left:6px}
+.flag-note{margin:0 0 12px;padding:10px 12px;background:#fdf3d7;
+  border:1px solid #c99a2b;border-radius:6px;font-weight:600}
+.neg{color:#9a3b26}
+@media (max-width:900px){
+  th:nth-child(3),td:nth-child(3),th:nth-child(7),td:nth-child(7),
+  th:nth-child(11),td:nth-child(11),th:nth-child(12),td:nth-child(12){display:none}
+}

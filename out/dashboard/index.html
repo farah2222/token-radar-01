@@ -3,34 +3,42 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token Radar — radar-6</title>
+<title>Token Radar — radar-7</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
 <header class="head">
   <div>
     <h1>Token Radar</h1>
-    <p class="sub">Pre-token protocols, ranked by implied value. Model <strong>radar-6</strong> · Snapshot <strong>2026-11-14</strong> (DefiLlama) · <strong>178</strong> ranked · <strong>40</strong> watchlist · <strong>26</strong> newly tracked</p>
+    <p class="sub">Pre-token protocols, ranked by implied value. Model <strong>radar-7</strong> · Snapshot <strong>2026-11-14</strong> (DefiLlama) · <strong>758</strong> protocols in the census · <strong>178</strong> clean launch candidates · <strong>40</strong> watchlist · <strong>53</strong> newly tracked</p>
   </div>
-  <div class="head-note">Implied value = TVL × category multiple × growth × maturity × breadth. Every figure comes from the snapshot; no protocol name is hardcoded.</div>
+  <div class="head-note">Implied value = TVL × category multiple × growth × maturity × breadth. Every figure comes from the snapshot; no protocol name is hardcoded. Launch rank is the rank among the 178 clean pre-token protocols; census rank is the position among all 758.</div>
 </header>
+
+<section id="integrity" class="strip" aria-label="Data integrity"></section>
 
 <nav class="controls" aria-label="Board controls">
   <input id="q" type="search" placeholder="Search name, slug or category…" aria-label="Search">
   <select id="cat" aria-label="Category"><option value="">All categories</option></select>
+  <select id="status" aria-label="Status">
+    <option value="pretoken">Pre-token only</option>
+    <option value="">All 758</option>
+    <option value="pretoken-flagged">Flagged only</option>
+    <option value="live">Already trading only</option>
+  </select>
   <label class="chk"><input id="wl" type="checkbox"> Watchlist only</label>
   <label class="chk"><input id="nt" type="checkbox"> Newly tracked only</label>
   <select id="sort" aria-label="Sort by">
-    <option value="rank">Sort: rank</option>
+    <option value="rank">Sort: launch rank</option>
+    <option value="census">Sort: census rank</option>
     <option value="value">Sort: implied value</option>
     <option value="tvl">Sort: TVL</option>
     <option value="change">Sort: 7-day change</option>
     <option value="age">Sort: age (oldest first)</option>
+    <option value="odds">Sort: token odds</option>
+    <option value="farm">Sort: farm $/hour</option>
+    <option value="vsmarket">Sort: model vs market</option>
   </select>
-  <div class="views" role="group" aria-label="View">
-    <button id="v-board" class="on" type="button">Pre-token board</button>
-    <button id="v-live" type="button">Live tokens</button>
-  </div>
 </nav>
 <p id="count" class="count" aria-live="polite"></p>
 
@@ -38,23 +46,15 @@
   <section id="board-sec">
     <table id="board">
       <thead><tr>
-        <th>Rank</th><th>Protocol</th><th>Category</th><th>TVL</th><th>7-day</th>
+        <th>Rank</th><th>Protocol</th><th>Status</th><th>Category</th><th>TVL</th><th>7-day</th>
         <th>First tracked</th><th>Chains</th><th>Implied value</th><th>Multiple</th>
+        <th>Odds / vs market</th><th>Farm $/h</th>
       </tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </section>
 
   <section id="detail" class="detail" hidden></section>
-
-  <section id="live-sec" hidden>
-    <h2>Live tokens — already trading, not ranked</h2>
-    <p class="note">These 119 protocols already have a token with a market cap. They are the comparables the multiples come from; they are not farm targets and never appear on the pre-token board.</p>
-    <table id="live">
-      <thead><tr><th>#</th><th>Protocol</th><th>Category</th><th>TVL</th><th>Market cap</th><th>Mcap / TVL</th></tr></thead>
-      <tbody id="live-rows"></tbody>
-    </table>
-  </section>
 
   <section id="model" class="panel">
     <h2>How the value is worked out</h2>
@@ -64,13 +64,29 @@
       <li><strong>Growth</strong> — 1 + clamp(7-day change, −60, 120) / 100 × 0.5. A missing 7-day change counts as 0.</li>
       <li><strong>Maturity</strong> — 0.6 + min(age in days, 1095) / 1095 × 0.4. Age is the snapshot date minus the day DefiLlama first tracked the protocol; unknown counts as 365 days.</li>
       <li><strong>Breadth</strong> — 1 + 0.04 × min(chains − 1, 5).</li>
-      <li><strong>Likely rank A–B</strong> — the same calculation with the category's 25th and 75th percentile multiples instead of the median, showing the ranks those values would take. It is the comparables' own spread, not a guess.</li>
+      <li><strong>Launch rank</strong> — the rank among the 178 clean pre-token protocols by implied value. <strong>Census rank</strong> — the position among all 758 protocols. Flagged and already-trading rows carry no launch rank.</li>
+      <li><strong>Likely rank A–B</strong> — the same calculation with the category's 25th and 75th percentile multiples instead of the median, showing the launch ranks those values would take. It is the comparables' own spread, not a guess.</li>
+      <li><strong>Token odds</strong> — a logistic regression fitted on the snapshot's own launched-versus-pre-token split (416 launched, 342 pre-token), from log TVL, age, chain count, 7-day change and the live share of the protocol's category. It is a probability, not a promise, and it is only shown for pre-token rows.</li>
+      <li><strong>Farm economics</strong> — the deposit is deployed capital and comes back on exit, so the only sunk cash cost is the gas, and the farm breaks even when the eventual airdrop is worth the gas. The scenario dollars per hour ask what the farm would pay if the airdrop were shared out purely pro-rata by TVL at implied value; real airdrops are rarely pro-rata, so treat it as a yardstick for comparing farms, not a payout.</li>
     </ul>
     <h3>Category multiples</h3>
     <table id="cats">
       <thead><tr><th>Category</th><th>Multiple used</th><th>Source</th><th>Comparables</th><th>25th pct</th><th>Median</th><th>75th pct</th></tr></thead>
       <tbody id="cat-rows"></tbody>
     </table>
+    <h3>Held-out validation — the value terms tested on data they never saw</h3>
+    <p class="note">Five-fold cross-validation over the 119 live-token comparables: each fold's multiples are computed from the other four folds only, so a held-out protocol never prices itself. Median absolute percentage error (MdAPE) is the headline number; the mean is dominated by the worst misses.</p>
+    <table id="validation">
+      <thead><tr><th>Variant</th><th>Median error</th><th>Mean error</th><th>Within 2×</th><th>Within 1.5×</th><th>Median bias</th></tr></thead>
+      <tbody id="val-rows"></tbody>
+    </table>
+    <p class="note" id="val-note"></p>
+    <h3>Token-odds model</h3>
+    <table id="odds">
+      <thead><tr><th>Feature</th><th>Coefficient</th></tr></thead>
+      <tbody id="odds-rows"></tbody>
+    </table>
+    <p class="note" id="odds-note"></p>
   </section>
 
   <section id="ledger" class="panel">
@@ -79,8 +95,9 @@
       <thead><tr><th>Group</th><th>Count</th><th>What it is</th></tr></thead>
       <tbody id="ledger-rows"></tbody>
     </table>
-    <p class="note">Protocols at or above the $50M floor that are not on the watchlist are left off the board on purpose: above the floor, a pre-token-looking protocol the watchlist left out is almost certainly a chain deployment or product of a protocol whose token already trades, and the snapshot carries no parent field to tell them apart — ranking them would be a guess.</p>
+    <p class="note">Flagged rows are ranked in the census but carry no launch rank: above the floor and off the watchlist, a pre-token-looking protocol is most likely a chain deployment or product of a protocol whose token already trades, and the snapshot carries no parent field to tell them apart — so they are leads to verify, not confirmed launches.</p>
     <p class="note">"Records no token" means the snapshot lists no token for the protocol; the record is not proof that no token exists.</p>
+    <p class="note">Live rows show the market's own answer beside the model's: the actual market cap and the model-versus-market ratio. Where the model says much more than the market, the multiple is probably too generous for that category; where it says much less, the market may be pricing something the snapshot cannot see.</p>
   </section>
 </main>
 
